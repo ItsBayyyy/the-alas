@@ -106,6 +106,12 @@ kbd{font-family:inherit;color:var(--ink);border:1px solid var(--edge);border-bot
 .go:hover{background:var(--sheet-ink);color:var(--sheet)}
 .go.sub{font-size:15px;padding:10px 20px;border-width:1px}
 .go:focus-visible,.sheet summary:focus-visible,.row :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mm{height:10px;border:1px solid var(--sheet-dim);overflow:hidden}
+.mmf{height:100%;width:0;background:var(--sheet-ink);transition:width .06s}
+.micbox{border:1px dashed var(--sheet-dim);padding:10px 12px;margin-top:12px}
+.micbox p{font-size:14px;margin:0 0 10px}
+.microw{display:flex;align-items:center;gap:12px}
+.microw .mm{flex:1}
 .note{font-size:13px;color:var(--sheet-dim);text-align:center;margin-top:12px;min-height:1em}
 
 @media (max-width:980px){
@@ -132,6 +138,7 @@ kbd{font-family:inherit;color:var(--ink);border:1px solid var(--edge);border-bot
     <div class="panel" id="bl">
       <div class="bar"><span class="lbl">Suara</span><div class="track"><div class="fill" id="noiseFill"></div></div></div>
       <div class="bar"><span class="lbl">Nafas</span><div class="track"><div class="fill" id="stamFill"></div></div></div>
+      <div class="bar hidden" id="micBar"><span class="lbl">Mik</span><div class="track"><div class="fill" id="micFill"></div></div></div>
       <div id="state"></div>
     </div>
     <div class="panel" id="br"><div class="lbl">Beban</div><div id="loadVal">0</div><div id="speedVal">Langkah 100%</div><div id="lootVal">Di mobil: Rp 0rb</div></div>
@@ -163,7 +170,7 @@ function wrapA(a){while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;ret
 const fmtW=w=>w%1?w.toFixed(1):String(w);
 
 // ---------- settings ----------
-const DEF={sens:1,bright:1,vol:.8,fov:75,quality:'tinggi',invert:false};
+const DEF={sens:1,bright:1,vol:.8,fov:75,quality:'tinggi',invert:false,mic:false,micSens:1};
 let CFG=Object.assign({},DEF);
 try{const s=JSON.parse(localStorage.getItem('the-alas-cfg')||'null');if(s)CFG=Object.assign(CFG,s);}catch(e){}
 function saveCfg(){try{localStorage.setItem('the-alas-cfg',JSON.stringify(CFG));}catch(e){}}
@@ -487,7 +494,7 @@ function build(){
     monster:{x:mspawn.x,z:mspawn.z,r:.5,face:Math.PI,state:'wander',target:null,wT:0,last:null,lost:0,search:0,detT:0,detSign:1,px:mspawn.x,pz:mspawn.z,progT:0,phase:0,speed:0,stepT:0},
     timeLeft:TOTAL,noise:0,deposited:new Set(),lootValue:0,lootCount:0,
     mode:'idle',startT:0,hintsOpen:false,shake:0,flicker:1,stepT:0,hbT:0,
-    tips:{},sel:0,lateWarned:false,danger:0,area:null,scareT:0
+    tips:{},sel:0,micN:0,total:0,lateWarned:false,danger:0,area:null,scareT:0
   };
 }
 
@@ -529,6 +536,51 @@ const sfx={
 function startEngineSound(){if(!AC||muted)return;const o=AC.createOscillator(),g=AC.createGain();o.type='sawtooth';o.frequency.setValueAtTime(30,AC.currentTime);o.frequency.linearRampToValueAtTime(72,AC.currentTime+3);g.gain.value=.16;o.connect(g).connect(master);o.start();engine=o;}
 function stopEngineSound(){if(engine){try{engine.stop();}catch(e){}engine=null;}}
 function toggleMute(){muted=!muted;if(master)master.gain.value=muted?0:CFG.vol;toast(muted?'Bunyi dimatikan.':'Bunyi dinyalakan.',1.2);}
+
+// ---------- microphone ----------
+const MIC={on:false,stream:null,src:null,an:null,buf:null,bbuf:null,db:-100,floor:-60,level:0,status:''};
+async function micEnable(){
+  if(MIC.on)return true;
+  initAudio();if(!AC){MIC.status='Browser ini tidak mendukung audio';return false;}
+  if(AC.state==='suspended'){try{await AC.resume();}catch(e){}}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){MIC.status='Browser ini tidak mendukung mikrofon (halaman harus dibuka lewat https)';return false;}
+  try{
+    const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+    const src=AC.createMediaStreamSource(st),an=AC.createAnalyser();an.fftSize=1024;src.connect(an);
+    Object.assign(MIC,{stream:st,src,an,buf:new Float32Array(an.fftSize),bbuf:new Uint8Array(an.fftSize),on:true,status:'',floor:-60,level:0});
+    return true;
+  }catch(e){
+    MIC.status=e&&(e.name==='NotAllowedError'||e.name==='SecurityError')?'Izin mikrofon ditolak atau diblokir halaman ini':'Mikrofon tidak ditemukan';
+    return false;
+  }
+}
+function micDisable(){
+  if(MIC.stream)MIC.stream.getTracks().forEach(t=>t.stop());
+  if(MIC.src){try{MIC.src.disconnect();}catch(e){}}
+  Object.assign(MIC,{on:false,stream:null,src:null,an:null,level:0,status:''});
+}
+function micSample(dt){
+  if(!MIC.on||!MIC.an){MIC.level=0;return 0;}
+  let sum=0;const n=MIC.buf.length;
+  if(MIC.an.getFloatTimeDomainData){MIC.an.getFloatTimeDomainData(MIC.buf);for(let i=0;i<n;i++)sum+=MIC.buf[i]*MIC.buf[i];}
+  else{MIC.an.getByteTimeDomainData(MIC.bbuf);for(let i=0;i<n;i++){const v=(MIC.bbuf[i]-128)/128;sum+=v*v;}}
+  const db=20*Math.log10(Math.sqrt(sum/n)+1e-8);MIC.db=db;
+  if(db<MIC.floor)MIC.floor=lerp(MIC.floor,db,Math.min(1,dt*4));else if(db<MIC.floor+10)MIC.floor+=dt*1.5;
+  MIC.floor=clamp(MIC.floor,-90,-35);
+  const gate=Math.max(-45-8*Math.log2(CFG.micSens),MIC.floor+8);
+  const lvl=clamp((db-gate)/35*100,0,100);
+  MIC.level=lvl>MIC.level?lvl:Math.max(lvl,MIC.level-45*dt);
+  return MIC.level;
+}
+function updateMicUI(){
+  document.querySelectorAll('.micBtn').forEach(b=>{b.textContent=MIC.on?'Matikan mikrofon':'Nyalakan mikrofon';});
+  document.querySelectorAll('.micStat').forEach(e=>{e.textContent=MIC.on?'Mikrofon menyala. Coba bicara, bar di atas akan bergerak.':MIC.status;});
+}
+async function toggleMic(){
+  if(MIC.on){micDisable();CFG.mic=false;toast('Mikrofon dimatikan.',1.4);}
+  else{const ok=await micEnable();CFG.mic=ok;toast(ok?'Mikrofon menyala. Hati-hati bicara.':MIC.status+'.',2.6);}
+  saveCfg();updateMicUI();
+}
 
 // ---------- input ----------
 const keys={};const joy={active:false,dx:0,dy:0};let touchSprint=false;
@@ -574,7 +626,7 @@ addEventListener('keydown',e=>{
   keys[k]=true;
   if(e.repeat||!running||paused||!S)return;
   if(k===' ')doJump();else if(k==='e')doUse();else if(k==='q')doDrop();
-  else if(k==='c')toggleCrouch();else if(k==='h')toggleHints();else if(k==='m')toggleMute();
+  else if(k==='c')toggleCrouch();else if(k==='h')toggleHints();else if(k==='m')toggleMute();else if(k==='v')toggleMic();
   else if((k==='p'||k==='escape')&&S.mode!=='over')pause();
   else if(k>='1'&&k<='9')selectSlot(+k-1);
 });
@@ -703,6 +755,7 @@ function update(dt){
   let nt=0;if(moving&&!p.air)nt=(crouch?5:sprinting?55:20)+load*(crouch?2:3)+(inBush?14:0)+(onGravel?10:0);
   if(S.mode==='starting')nt=100;
   if(S.noise<nt)S.noise=Math.min(100,S.noise+(nt-S.noise)*Math.min(1,dt*3));else S.noise=Math.max(nt,S.noise-28*dt);
+  S.micN=MIC.level;S.total=Math.min(100,Math.max(S.noise,S.micN)+.3*Math.min(S.noise,S.micN));
 
   const spd=Math.hypot(p.vx,p.vz);
   if(spd>.3&&!p.air){p.bob+=dt*spd*2.3;S.stepT-=dt*spd/2.9;if(S.stepT<=0){S.stepT=.5;sfx.step(S.noise);}}
@@ -731,10 +784,10 @@ function update(dt){
 
 function updateMonster(dt){
   const m=S.monster,p=S.player,d=Math.hypot(p.x-m.x,p.z-m.z);
-  const hears=d<S.noise*.32+.8;
+  const hears=d<S.total*.32+.8;
   if(hears){
     const err=Math.min(7,d*.12);m.last={x:p.x+rand(-err,err),z:p.z+rand(-err,err)};m.lost=0;
-    if(m.state!=='chase'&&(d<7||(S.noise>38&&d<16)||S.mode==='starting')){m.state='chase';sfx.growl(panTo(m.x,m.z));toast('Ia mendengarmu.',1.6);}
+    if(m.state!=='chase'&&(d<7||(S.total>38&&d<16)||S.mode==='starting')){m.state='chase';sfx.growl(panTo(m.x,m.z));toast(S.micN>S.noise?'Ia mendengar suaramu.':'Ia mendengarmu.',1.6);}
     else if(m.state!=='chase'){m.state='hunt';m.target=m.last;m.search=0;}
   }
   if(m.state==='chase'){
@@ -830,13 +883,15 @@ function hud(){
   const p=S.player,t=Math.ceil(S.timeLeft);
   $('timer').textContent=`${Math.floor(t/60)}:${String(t%60).padStart(2,'0')}`;
   $('timer').classList.toggle('late',S.timeLeft<60&&S.mode!=='idle');
-  const nf=$('noiseFill');nf.style.width=S.noise.toFixed(1)+'%';nf.style.background=S.noise<30?'#cfc4a8':S.noise<60?'#e0a63c':'#b8352b';
+  const nf=$('noiseFill');nf.style.width=S.total.toFixed(1)+'%';nf.style.background=S.total<30?'#cfc4a8':S.total<60?'#e0a63c':'#b8352b';
+  $('micBar').classList.toggle('hidden',!MIC.on);$('micFill').style.width=MIC.level.toFixed(0)+'%';$('micFill').style.background=MIC.level>25?'#e0a63c':'#cfc4a8';
+  document.querySelectorAll('.micMeter').forEach(e=>{e.style.width=MIC.level.toFixed(0)+'%';});
   const sf=$('stamFill');sf.style.width=p.stamina.toFixed(1)+'%';sf.style.background=p.exhausted?'#6e6553':'#8aa894';
   const load=carryLoad();
   $('loadVal').textContent=fmtW(load);
   $('speedVal').textContent=`Langkah ${Math.round(Math.max(.3,1-load*.06)*100)}%`;
   $('lootVal').textContent=`Di mobil: Rp ${S.lootValue}rb`;
-  const st=p.exhausted?'Kehabisan nafas':p.crouch?'Jongkok':'';
+  const st=MIC.on&&MIC.level>25?'Suaramu terdengar':p.exhausted?'Kehabisan nafas':p.crouch?'Jongkok':'';
   if(st!==lastState){lastState=st;$('state').textContent=st;}
   compass();
   let pt='';
@@ -854,13 +909,16 @@ function hud(){
 }
 
 // ---------- menus ----------
-const CTRL=[['Berjalan','W A S D'],['Menoleh','Mouse'],['Lari','Tahan Shift'],['Jongkok','C'],['Lompat','Spasi'],['Ambil, taruh di mobil','E atau klik kiri'],['Pilih barang yang dipegang','1–9 atau scroll'],['Buang barang yang dipegang','Q atau klik kanan'],['Petunjuk','H'],['Lihat kontrol','Tahan Tab'],['Layar penuh','F'],['Bunyi','M'],['Jeda','Esc']];
+const CTRL=[['Berjalan','W A S D'],['Menoleh','Mouse'],['Lari','Tahan Shift'],['Jongkok','C'],['Lompat','Spasi'],['Ambil, taruh di mobil','E atau klik kiri'],['Pilih barang yang dipegang','1–9 atau scroll'],['Buang barang yang dipegang','Q atau klik kanan'],['Petunjuk','H'],['Lihat kontrol','Tahan Tab'],['Layar penuh','F'],['Bunyi','M'],['Mikrofon nyala / mati','V'],['Jeda','Esc']];
 const ctrlTable=()=>`<table class="ctl">${CTRL.map(r=>`<tr><td>${r[0]}</td><td class="k">${r[1]}</td></tr>`).join('')}</table>`;
 $('help').innerHTML=`<div class="lbl">Kontrol</div>${ctrlTable()}`;
-const fmtCfg=(k,v)=>k==='fov'?v+'°':k==='vol'?Math.round(v*100)+'%':(+v).toFixed(1)+'×';
+const fmtCfg=(k,v)=>k==='fov'?v+'°':k==='micSens'?(+v).toFixed(1)+'×':k==='vol'?Math.round(v*100)+'%':(+v).toFixed(1)+'×';
 const range=(k,l,a,b,s)=>`<label class="row"><span>${l}</span><input type="range" min="${a}" max="${b}" step="${s}" data-cfg="${k}" value="${CFG[k]}"><output>${fmtCfg(k,CFG[k])}</output></label>`;
+const micBox=()=>`<div class="micbox"><p>Mikrofon (opsional): suaramu di dunia nyata ikut terdengar oleh makhluk itu. Bicara biasa terdengar dari belasan meter, teriakan lebih jauh lagi. Berbisik lebih aman.</p>
+  <div class="microw"><button class="go sub micBtn" data-act="mic" type="button">${MIC.on?'Matikan mikrofon':'Nyalakan mikrofon'}</button><div class="mm"><div class="mmf micMeter"></div></div></div>
+  <div class="note micStat" style="text-align:left">${MIC.on?'Mikrofon menyala. Coba bicara, bar di atas akan bergerak.':MIC.status}</div></div>`;
 function settingsHTML(){
-  return `${range('sens','Sensitivitas mouse',.3,3,.1)}${range('bright','Kecerahan',.6,2.2,.1)}${range('vol','Volume',0,1,.05)}${range('fov','Sudut pandang',60,100,1)}
+  return `${range('sens','Sensitivitas mouse',.3,3,.1)}${range('bright','Kecerahan',.6,2.2,.1)}${range('vol','Volume',0,1,.05)}${range('fov','Sudut pandang',60,100,1)}${range('micSens','Kepekaan mikrofon',.4,3,.1)}
   <label class="row"><span>Kualitas grafis</span><select data-cfg="quality"><option value="tinggi">Tinggi</option><option value="sedang">Sedang</option><option value="rendah">Rendah (paling ringan)</option></select><span></span></label>
   <label class="row"><span>Balik arah mouse atas-bawah</span><input type="checkbox" data-cfg="invert"><span></span></label>`;
 }
@@ -878,6 +936,7 @@ function showStart(){
     <p>Mobilmu mogok di tengah alas. Cari Kunci Mobil, Busi, Aki, dan Jeriken Bensin, bawa ke mobil, lalu kabur sebelum 7½ menit habis.</p>
     <p>Ada sesuatu di antara pepohonan. Ia tidak melihat, ia mendengar. Setiap barang yang kau pungut membuat langkahmu lebih berat, lebih lambat, dan lebih berisik. Barang antik di jalan boleh dibawa pulang, kalau kau berani.</p>
     ${noMouse?'<p class="warn">The Alas dibuat untuk PC. Mainkan dengan keyboard dan mouse.</p>':''}
+    ${micBox()}
     <details open><summary>Kontrol</summary>${ctrlTable()}</details>
     <details><summary>Pengaturan</summary>${settingsHTML()}</details>
     <div class="btns"><button class="go" data-act="start" type="button">Masuk ke alas</button></div>
@@ -891,6 +950,7 @@ function pause(){
   ov.innerHTML=`<div class="sheet"><h1>Jeda</h1><div class="tag">Alas menunggumu. Ia juga.</div>
     <div class="btns"><button class="go" data-act="resume" type="button">Lanjut</button><button class="go sub" data-act="restart" type="button">Ulang dari awal</button></div>
     <div class="note" id="lockMsg"></div>
+    ${micBox()}
     <details><summary>Pengaturan</summary>${settingsHTML()}</details>
     <details><summary>Kontrol</summary>${ctrlTable()}</details></div>`;
   syncForm();ov.classList.remove('hidden');
@@ -932,11 +992,12 @@ function start(){
   $('hints').classList.add('hidden');$('danger').style.opacity=0;
   renderObj();renderHints();renderInv();ov.classList.add('hidden');lastPrompt='~';
   applyCfg();last=performance.now();tryLock();
+  if(CFG.mic&&!MIC.on)micEnable().then(ok=>{if(!ok){CFG.mic=false;saveCfg();toast(MIC.status+'.',2.6);}updateMicUI();});
   toast('Mobilmu mogok. Jangan berisik.',3);
 }
 ov.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act;
-  if(a==='start'||a==='restart')start();else if(a==='resume')resume();
+  if(a==='start'||a==='restart')start();else if(a==='resume')resume();else if(a==='mic')toggleMic();
 });
 
 (()=>{const g=document.createElement('canvas');g.width=g.height=160;const x=g.getContext('2d');const d=x.createImageData(160,160);
@@ -947,6 +1008,7 @@ ov.addEventListener('click',e=>{
 let last=performance.now();
 function frame(now){
   const dt=Math.min(.05,(now-last)/1000);last=now;
+  micSample(dt);
   if(running&&!paused){
     if(S.mode==='play'||S.mode==='starting')update(dt);
     else if(S.mode==='over'&&S.scareT>0)scare(dt);
