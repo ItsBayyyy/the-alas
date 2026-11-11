@@ -141,7 +141,7 @@ kbd{font-family:inherit;color:var(--ink);border:1px solid var(--edge);border-bot
       <div class="bar hidden" id="micBar"><span class="lbl">Mik</span><div class="track"><div class="fill" id="micFill"></div></div></div>
       <div id="state"></div>
     </div>
-    <div class="panel" id="br"><div class="lbl">Beban</div><div id="loadVal">0</div><div id="speedVal">Langkah 100%</div><div id="lootVal">Di mobil: Rp 0rb</div></div>
+    <div class="panel" id="br"><div class="lbl">Beban</div><div id="loadVal">0</div><div id="speedVal">Langkah 100%</div><div id="lootVal">Di mobil: Rp 0rb</div><div id="curseVal" class="hidden" style="color:var(--danger)"></div></div>
     <div id="inv"></div>
     <div id="prompt"></div>
     <div id="toast"></div>
@@ -494,7 +494,7 @@ function build(){
     monster:{x:mspawn.x,z:mspawn.z,r:.5,face:Math.PI,state:'wander',target:null,wT:0,last:null,lost:0,search:0,detT:0,detSign:1,px:mspawn.x,pz:mspawn.z,progT:0,phase:0,speed:0,stepT:0},
     timeLeft:TOTAL,noise:0,deposited:new Set(),lootValue:0,lootCount:0,
     mode:'idle',startT:0,hintsOpen:false,shake:0,flicker:1,stepT:0,hbT:0,
-    tips:{},sel:0,micN:0,total:0,lateWarned:false,danger:0,area:null,scareT:0
+    tips:{},sel:0,curse:0,events:[],loadInt:0,moveT:0,micN:0,total:0,lateWarned:false,danger:0,area:null,scareT:0
   };
 }
 
@@ -610,7 +610,7 @@ document.addEventListener('mousemove',e=>{
 cvs.addEventListener('mousedown',e=>{
   if(e.button===0)mouseDown=true;
   if(!running||paused||!S||S.mode==='over')return;
-  if(e.button===2){doDrop();return;}
+  if(e.button===2){doThrow();return;}
   if(!locked&&!dragLook){tryLock();return;}
   if(locked&&e.button===0)doUse();
 });
@@ -626,7 +626,7 @@ addEventListener('keydown',e=>{
   keys[k]=true;
   if(e.repeat||!running||paused||!S)return;
   if(k===' ')doJump();else if(k==='e')doUse();else if(k==='q')doDrop();
-  else if(k==='c')toggleCrouch();else if(k==='h')toggleHints();else if(k==='m')toggleMute();else if(k==='v')toggleMic();
+  else if(k==='c')toggleCrouch();else if(k==='h')toggleHints();else if(k==='m')toggleMute();else if(k==='v')toggleMic();else if(k==='g')doThrow();
   else if((k==='p'||k==='escape')&&S.mode!=='over')pause();
   else if(k>='1'&&k<='9')selectSlot(+k-1);
 });
@@ -690,6 +690,7 @@ function doUse(){
   }
   const it=nearestItem();
   if(it){
+    if(!it.req&&!it.cursed){it.cursed=true;S.curse++;burst(1.4,.25,160);setTimeout(()=>{if(S&&S.mode==='play')toast('Alas tidak suka barangnya diambil. Ia makin peka.',2.4);},1900);}
     it.state='carried';it.mesh.visible=false;it.glint.visible=false;p.carried.push(it);S.sel=p.carried.length-1;refreshHeld();renderInv();
     addNoise(16+it.def.w*3);sfx.pick();toast(`${it.def.name} diambil. Beban +${fmtW(it.def.w)}`,1.8);renderObj();renderHints();return;
   }
@@ -700,7 +701,20 @@ function doDrop(){
   const it=p.carried.splice(S.sel,1)[0],f=fwd(p);it.state='ground';
   S.sel=Math.max(0,Math.min(S.sel,p.carried.length-1));
   it.x=p.x+f.x*.9;it.z=p.z+f.z*.9;it.mesh.position.set(it.x,0,it.z);it.mesh.visible=true;it.glint.position.set(it.x,.35,it.z);it.glint.visible=true;
-  refreshHeld();renderInv();addNoise(26+it.def.w*4);sfx.drop();toast(`${it.def.name} dibuang. BRAK!`,1.6);renderObj();renderHints();
+  refreshHeld();renderInv();
+  if(p.crouch){addNoise(8+it.def.w);sfx.step(20);toast(`${it.def.name} diletakkan pelan.`,1.4);}
+  else{addNoise(26+it.def.w*4);sfx.drop();toast(`${it.def.name} dibuang. BRAK!`,1.6);}
+  renderObj();renderHints();
+}
+function doThrow(){
+  const p=S.player;if(S.mode!=='play'||!p.carried.length)return;
+  const it=p.carried.splice(S.sel,1)[0],f=fwd(p);
+  S.sel=Math.max(0,Math.min(S.sel,p.carried.length-1));
+  const maxD=Math.max(4,9-it.def.w*.8);let ex=p.x+f.x,ez=p.z+f.z;
+  for(let d=1.5;d<=maxD;d+=.5){const x=p.x+f.x*d,z=p.z+f.z*d;if(x<1||z<1||x>WORLD-1||z>WORLD-1||S.obs.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+.25))break;ex=x;ez=z;}
+  it.state='flying';it.fly={sx:p.x+f.x*.5,sz:p.z+f.z*.5,ex,ez,t:0,dur:.6};it.mesh.visible=true;
+  refreshHeld();renderInv();addNoise(6);tone(300,.15,'triangle',.06,180);renderObj();renderHints();
+  if(!S.tips.lure){S.tips.lure=true;toast('Bunyi barang yang jatuh akan memancing makhluk itu ke sana.',2.6);}
 }
 
 // ---------- simulation ----------
@@ -758,6 +772,7 @@ function update(dt){
   S.micN=MIC.level;S.total=Math.min(100,Math.max(S.noise,S.micN)+.3*Math.min(S.noise,S.micN));
 
   const spd=Math.hypot(p.vx,p.vz);
+  if(spd>.3){S.loadInt+=load*dt;S.moveT+=dt;}
   if(spd>.3&&!p.air){p.bob+=dt*spd*2.3;S.stepT-=dt*spd/2.9;if(S.stepT<=0){S.stepT=.5;sfx.step(S.noise);}}
   p.eye=lerp(p.eye,(crouch?1.0:1.62)-Math.min(.25,load*.035),Math.min(1,dt*8));
 
@@ -771,6 +786,13 @@ function update(dt){
   if(inArea&&S.area!==inArea.id){S.area=inArea.id;areaCaption(inArea.name);}
   if(!inArea&&Math.hypot(p.x-CAR.x,p.z-CAR.z)>16)S.area=null;
 
+  for(const it of S.items){
+    if(it.state!=='flying')continue;const F=it.fly;F.t+=dt/F.dur;const k=Math.min(1,F.t);
+    it.mesh.position.set(lerp(F.sx,F.ex,k),(1-k)*1.3+3.2*k*(1-k),lerp(F.sz,F.ez,k));it.mesh.rotation.x+=dt*9;
+    if(k>=1){it.state='ground';it.x=F.ex;it.z=F.ez;delete it.fly;it.mesh.position.set(it.x,0,it.z);it.mesh.rotation.x=0;
+      it.glint.position.set(it.x,.35,it.z);it.glint.visible=true;S.events.push({x:it.x,z:it.z,n:Math.min(100,45+it.def.w*6)});
+      const pn=panTo(it.x,it.z);tone(90,.35,'sine',.4,40,pn);burst(.3,.45,300,pn);renderHints();}
+  }
   updateMonster(dt);
   if(S.mode==='over')return;
 
@@ -784,7 +806,9 @@ function update(dt){
 
 function updateMonster(dt){
   const m=S.monster,p=S.player,d=Math.hypot(p.x-m.x,p.z-m.z);
-  const hears=d<S.total*.32+.8;
+  const hm=1+.1*S.curse,hears=d<(S.total*.32+.8)*hm;
+  for(const ev of S.events){const de=Math.hypot(ev.x-m.x,ev.z-m.z);if(de<(ev.n*.32+.8)*hm&&(m.state!=='chase'||m.lost>0)){m.state='hunt';m.target={x:ev.x,z:ev.z};m.search=0;m.lost=0;m.last=null;}}
+  S.events.length=0;
   if(hears){
     const err=Math.min(7,d*.12);m.last={x:p.x+rand(-err,err),z:p.z+rand(-err,err)};m.lost=0;
     if(m.state!=='chase'&&(d<7||(S.total>38&&d<16)||S.mode==='starting')){m.state='chase';sfx.growl(panTo(m.x,m.z));toast(S.micN>S.noise?'Ia mendengar suaramu.':'Ia mendengarmu.',1.6);}
@@ -805,7 +829,7 @@ function updateMonster(dt){
       m.wT=rand(5,9);
     }
   }
-  const sp={wander:1.45,hunt:2.8,chase:4.3}[m.state]*(S.timeLeft<60?1.15:1);
+  const sp={wander:1.45,hunt:2.8,chase:4.3}[m.state]*(S.timeLeft<60?1.15:1)*(1+.06*S.curse);
   let moved=0;
   if(m.target){
     const dx=m.target.x-m.x,dz=m.target.z-m.z,td=Math.hypot(dx,dz);
@@ -891,6 +915,7 @@ function hud(){
   $('loadVal').textContent=fmtW(load);
   $('speedVal').textContent=`Langkah ${Math.round(Math.max(.3,1-load*.06)*100)}%`;
   $('lootVal').textContent=`Di mobil: Rp ${S.lootValue}rb`;
+  const cv=$('curseVal');cv.classList.toggle('hidden',!S.curse);if(S.curse)cv.textContent=`Kutukan ×${S.curse}`;
   const st=MIC.on&&MIC.level>25?'Suaramu terdengar':p.exhausted?'Kehabisan nafas':p.crouch?'Jongkok':'';
   if(st!==lastState){lastState=st;$('state').textContent=st;}
   compass();
@@ -909,7 +934,7 @@ function hud(){
 }
 
 // ---------- menus ----------
-const CTRL=[['Berjalan','W A S D'],['Menoleh','Mouse'],['Lari','Tahan Shift'],['Jongkok','C'],['Lompat','Spasi'],['Ambil, taruh di mobil','E atau klik kiri'],['Pilih barang yang dipegang','1–9 atau scroll'],['Buang barang yang dipegang','Q atau klik kanan'],['Petunjuk','H'],['Lihat kontrol','Tahan Tab'],['Layar penuh','F'],['Bunyi','M'],['Mikrofon nyala / mati','V'],['Jeda','Esc']];
+const CTRL=[['Berjalan','W A S D'],['Menoleh','Mouse'],['Lari','Tahan Shift'],['Jongkok','C'],['Lompat','Spasi'],['Ambil, taruh di mobil','E atau klik kiri'],['Pilih barang yang dipegang','1–9 atau scroll'],['Buang barang yang dipegang','Q (jongkok: letakkan pelan)'],['Lempar barang sebagai umpan','G atau klik kanan'],['Petunjuk','H'],['Lihat kontrol','Tahan Tab'],['Layar penuh','F'],['Bunyi','M'],['Mikrofon nyala / mati','V'],['Jeda','Esc']];
 const ctrlTable=()=>`<table class="ctl">${CTRL.map(r=>`<tr><td>${r[0]}</td><td class="k">${r[1]}</td></tr>`).join('')}</table>`;
 $('help').innerHTML=`<div class="lbl">Kontrol</div>${ctrlTable()}`;
 const fmtCfg=(k,v)=>k==='fov'?v+'°':k==='micSens'?(+v).toFixed(1)+'×':k==='vol'?Math.round(v*100)+'%':(+v).toFixed(1)+'×';
@@ -934,7 +959,7 @@ function showStart(){
     <h1>The Alas</h1>
     <div class="tag">Sedikit itu cukup. Banyak itu petaka.</div>
     <p>Mobilmu mogok di tengah alas. Cari Kunci Mobil, Busi, Aki, dan Jeriken Bensin, bawa ke mobil, lalu kabur sebelum 7½ menit habis.</p>
-    <p>Ada sesuatu di antara pepohonan. Ia tidak melihat, ia mendengar. Setiap barang yang kau pungut membuat langkahmu lebih berat, lebih lambat, dan lebih berisik. Barang antik di jalan boleh dibawa pulang, kalau kau berani.</p>
+    <p>Ada sesuatu di antara pepohonan. Ia tidak melihat, ia mendengar. Setiap barang yang kau pungut membuat langkahmu lebih berat, lebih lambat, dan lebih berisik. Barang antik boleh dibawa pulang, tapi alas tidak suka barangnya diambil: setiap barang antik membuat makhluk itu lebih cepat dan lebih peka. Lempar barang untuk memancingnya menjauh.</p>
     ${noMouse?'<p class="warn">The Alas dibuat untuk PC. Mainkan dengan keyboard dan mouse.</p>':''}
     ${micBox()}
     <details open><summary>Kontrol</summary>${ctrlTable()}</details>
@@ -966,13 +991,21 @@ function endGame(kind){
   if(kind==='win'){sfx.win();title='Kamu lolos';
     sub=S.lootCount===0?'Hemat beban, selamat nyawa. Di kaca spion, sesuatu berdiri diam.':S.lootValue>=900?'Rakus, tapi selamat. Kali ini.':'Lampu mobil menembus kabut. Di kaca spion, sesuatu berdiri diam.';}
   else if(kind==='caught'){sfx.caught();title='Tertangkap';S.scareT=.95;
-    sub=p.carried.length?`Kamu memikul ${p.carried.length} barang. Langkahmu terlalu berat.`:'Ia tidak perlu melihat. Ia cukup mendengar.';}
+    sub=p.carried.length?`Kamu memikul beban ${fmtW(carryLoad())} saat tertangkap. Langkahmu terlalu berat.`:'Ia tidak perlu melihat. Ia cukup mendengar.';}
   else{sfx.caught();title='Waktu habis';S.scareT=.95;
     const m=S.monster;m.x=p.x+Math.sin(p.yaw)*1.4;m.z=p.z+Math.cos(p.yaw)*1.4;sub='Alas tidak pernah melepaskan tamunya.';}
   $('danger').style.opacity=kind==='win'?0:.95;
+  const avg=S.moveT>0?S.loadInt/S.moveT:0;let scoreHTML='';
+  if(kind==='win'){
+    const sc=Math.round(1000+3*S.timeLeft+150*Math.max(0,4-avg)+S.lootValue/3);let best=0;
+    try{best=+(localStorage.getItem('the-alas-best')||0);if(sc>best)localStorage.setItem('the-alas-best',String(sc));}catch(e){}
+    const gelar=S.lootCount===0?'Si Pejalan Ringan':S.lootCount<=2?'Pengelana':'Si Serakah yang Beruntung';
+    scoreHTML=`<li><b>Skor ${sc}</b>${sc>best?(best?' (rekor baru)':''):`, rekor ${best}`}</li><li>Gelar: ${gelar}</li>`;
+  }
   ov.innerHTML=`<div class="sheet"><h1>${title}</h1><div class="tag">${sub}</div>
     <ul class="stats">
-      <li>Sisa waktu: ${tl}</li>
+      ${scoreHTML}<li>Sisa waktu: ${tl}</li>
+      <li>Beban rata-rata saat bergerak: ${avg.toFixed(1)}</li>${S.curse?`<li>Kutukan keserakahan: ×${S.curse}</li>`:''}
       <li>Suku cadang di mobil: ${S.deposited.size} dari ${REQ.length}</li>
       <li>Barang antik ${kind==='win'?'dibawa pulang':'di mobil'}: ${S.lootCount}, senilai Rp ${S.lootValue}rb</li>
     </ul>
