@@ -270,4 +270,40 @@ function makeMonster(){
   [armL,armR].forEach(a=>{for(let i=-1;i<=1;i++){const f=part(fGeo,mat,i*.04,-1.94,0,0,0,i*.25);a.add(f);}});
   const neck=part(new THREE.CylinderGeometry(.05,.07,.3,5),mat,0,3.05,.38,.5);
   const head=new THREE.Group();head.position.set(0,3.18,.5);
-  const skull=part(new THREE.IcosahedronGeometry(.22,0),mat);skull.scale.set(.9,1.25,1);head.add(sku
+  const skull=part(new THREE.IcosahedronGeometry(.22,0),mat);skull.scale.set(.9,1.25,1);head.add(sku  const ty=Math.atan2(-dx/d,-dz/d),tp=Math.atan2(3.15-p.eye,1.05);
+  p.yaw+=wrapA(ty-p.yaw)*Math.min(1,dt*14);p.pitch=lerp(p.pitch,tp,Math.min(1,dt*10));S.shake=.05;
+}
+function start(){
+  initAudio();if(AC&&AC.state==='suspended')AC.resume();
+  S=build();S.mode='play';running=true;paused=false;
+  $('hints').classList.add('hidden');$('bCrouch').classList.remove('on');$('danger').style.opacity=0;
+  renderObj();renderHints();ov.classList.add('hidden');lastPrompt='~';
+  resize();last=performance.now();tryLock();
+  toast('Mobilmu mogok. Jangan berisik.',3);
+}
+ov.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;if(b.dataset.act==='start')start();else if(b.dataset.act==='resume')resume();});
+
+(()=>{const g=document.createElement('canvas');g.width=g.height=160;const x=g.getContext('2d');const d=x.createImageData(160,160);
+  for(let i=0;i<d.data.length;i+=4){const v=Math.random()*255;d.data[i]=d.data[i+1]=d.data[i+2]=v;d.data[i+3]=Math.random()<.5?22:0;}
+  x.putImageData(d,0,0);$('grain').style.backgroundImage=`url(${g.toDataURL()})`;})();
+
+// ---------- loop ----------
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(running&&!paused){
+    if(S.mode==='play'||S.mode==='starting')update(dt);
+    else if(S.mode==='over'&&S.scareT>0)scare(dt);
+  }else if(S.mode==='idle'){S.player.yaw+=dt*.05;}
+  if(toastT>0){toastT-=dt;if(toastT<=0)$('toast').style.opacity=0;}
+  if(areaT>0){areaT-=dt;if(areaT<=0)$('area').style.opacity=0;}
+  render(dt);hud();
+  requestAnimationFrame(frame);
+}
+S=build();renderObj();renderHints();
+resize();showStart();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
