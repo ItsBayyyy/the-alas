@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Alas — prototipe 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik+Dirt&family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050706; --ink:#e3d8bd; --ink-dim:#a0967e; --accent:#e0a63c; --danger:#b8352b;
+  --panel:rgba(10,13,9,.78); --edge:rgba(227,216,189,.18); --btn-bg:rgba(227,216,189,.07);
+  --sheet:#d4c6a4; --sheet-ink:#1d1a12; --sheet-dim:#5c5240; --scrim:rgba(6,8,5,.66);
+  --type:"Special Elite","Courier New",Courier,monospace;
+  --display:"Rubik Dirt","Impact","Arial Black",sans-serif;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--sheet:#17190f;--sheet-ink:#e3d8bd;--sheet-dim:#a0967e;--scrim:rgba(0,0,0,.7);color-scheme:dark}
+}
+:root[data-theme="dark"]{--sheet:#17190f;--sheet-ink:#e3d8bd;--sheet-dim:#a0967e;--scrim:rgba(0,0,0,.7);color-scheme:dark}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px);background:var(--bg)}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--type);overflow:hidden;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#game{position:relative;width:100%;height:100%;overflow:hidden;touch-action:none}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated}
+#grain{position:absolute;inset:-40%;pointer-events:none;opacity:.55;mix-blend-mode:overlay;animation:grain 1s steps(5) infinite}
+@keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-3%,2%)}40%{transform:translate(2%,-3%)}60%{transform:translate(-2%,-2%)}80%{transform:translate(3%,3%)}100%{transform:translate(0,0)}}
+#vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.8) 100%)}
+#danger{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 35%,rgba(140,18,8,.62) 100%)}
+#cross{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:rgba(227,216,189,.55);pointer-events:none}
+#area{position:absolute;left:0;right:0;top:28%;text-align:center;font-family:var(--display);font-size:clamp(28px,6vw,48px);opacity:0;transition:opacity .9s;pointer-events:none;text-shadow:0 3px 12px #000}
+@media (prefers-reduced-motion:reduce){#grain{animation:none}}
+
+#touch{display:none;position:absolute;inset:0}
+.touch #touch{display:block}
+#lookZone{position:absolute;right:0;top:0;width:50%;height:100%;touch-action:none}
+#joyZone{position:absolute;left:0;bottom:0;width:50%;height:62%;touch-action:none}
+#joyBase{position:absolute;width:112px;height:112px;border-radius:50%;border:2px dashed rgba(227,216,189,.32);display:none;transform:translate(-50%,-50%)}
+#joyKnob{position:absolute;width:48px;height:48px;border-radius:50%;background:rgba(227,216,189,.24);left:50%;top:50%;transform:translate(-50%,-50%)}
+#joyHint,#lookHint{position:absolute;bottom:28px;font-size:11px;color:var(--ink-dim);pointer-events:none}
+#joyHint{left:24px} #lookHint{right:24px;bottom:auto;top:46%}
+.tb{position:absolute;border-radius:50%;border:1.5px solid rgba(227,216,189,.35);background:rgba(10,13,9,.6);color:var(--ink);font:inherit;font-size:11.5px;display:flex;align-items:center;justify-content:center;touch-action:none;padding:0}
+.tb.on{background:rgba(224,166,60,.32);border-color:var(--accent)}
+#bUse{width:76px;height:76px;right:18px;bottom:98px;font-size:13px;border-color:var(--accent)}
+#bRun{width:64px;height:64px;right:18px;bottom:20px}
+#bJump{width:64px;height:64px;right:102px;bottom:28px}
+#bCrouch{width:58px;height:58px;right:106px;bottom:112px}
+#bDrop{width:48px;height:48px;right:178px;bottom:76px;font-size:10.5px}
+
+#hud{position:absolute;inset:0;pointer-events:none;padding:10px max(10px,env(safe-area-inset-right,0px)) 10px max(10px,env(safe-area-inset-left,0px))}
+#topbar{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--edge);padding:8px 10px;clip-path:polygon(0 4px,7px 0,100% 3px,calc(100% - 2px) calc(100% - 5px),calc(100% - 9px) 100%,3px calc(100% - 2px))}
+.lbl{font-size:11px;color:var(--ink-dim);letter-spacing:.04em}
+#obj{list-style:none;margin:4px 0 0;padding:0;font-size:12.5px;line-height:1.55}
+#obj li::before{content:"◇ ";color:var(--ink-dim)}
+#obj li.carried{color:var(--accent)}
+#obj li.carried::before{content:"◆ ";color:var(--accent)}
+#obj li.done{color:var(--ink-dim);text-decoration:line-through}
+#obj li.done::before{content:"✓ "}
+#center{text-align:center;min-width:160px}
+#timer{font-family:var(--display);font-size:34px;line-height:1;text-shadow:0 2px 0 #000}
+#timer.late{color:var(--danger);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.55}}
+.bar{display:flex;align-items:center;gap:6px;margin-top:6px}
+.bar .lbl{width:44px;text-align:right}
+.track{flex:1;height:9px;background:rgba(227,216,189,.08);border:1px solid var(--edge);overflow:hidden}
+.fill{height:100%;width:0;background:var(--ink)}
+#loadPanel{justify-self:end;text-align:right;font-size:12px;line-height:1.45}
+#loadVal{font-size:18px;color:var(--ink)}
+.hb{pointer-events:auto;font:inherit;font-size:12px;color:var(--ink);background:var(--btn-bg);border:1px dashed var(--edge);padding:5px 9px;margin:6px 0 0 auto;cursor:pointer;display:block}
+.hb:focus-visible,.go:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#compass{position:absolute;left:50%;transform:translateX(-50%);width:min(360px,80%);height:24px;border-bottom:1px solid var(--edge);background:linear-gradient(90deg,transparent,rgba(10,13,9,.55) 20%,rgba(10,13,9,.55) 80%,transparent)}
+#compass::after{content:"";position:absolute;left:50%;bottom:-4px;width:1px;height:8px;background:var(--ink-dim)}
+.cmk{position:absolute;bottom:3px;transform:translateX(-50%);font-size:11.5px;white-space:nowrap;display:none}
+#hints{position:absolute;left:50%;transform:translateX(-50%);width:min(380px,calc(100% - 20px));font-size:12.5px;line-height:1.5}
+#hints.hidden{display:none}
+#hints ul{list-style:none;margin:6px 0 0;padding:0}
+#hints li{margin-bottom:6px}
+#hints li b{font-weight:400;color:var(--accent)}
+#hints li.got{opacity:.45;text-decoration:line-through}
+#prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:64px;font-size:15px;background:var(--panel);border:1px solid var(--edge);padding:7px 14px;max-width:92%;text-align:center;opacity:0;transition:opacity .15s}
+#prompt.show{opacity:1}
+.touch #prompt{bottom:238px;max-width:60%}
+#toast{position:absolute;left:50%;top:62%;transform:translate(-50%,-50%);width:90%;font-size:18px;text-align:center;opacity:0;transition:opacity .35s;text-shadow:0 2px 8px #000,0 0 2px #000}
+#keys{position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;justify-content:center;gap:4px 16px;font-size:11.5px;color:var(--ink-dim)}
+#keys kbd{font-family:inherit;color:var(--ink);border:1px solid var(--edge);padding:0 4px}
+.touch #keys{display:none}
+
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--scrim);padding:16px;z-index:10;overflow:auto}
+#overlay.hidden{display:none}
+.sheet{background:var(--sheet);color:var(--sheet-ink);max-width:470px;width:100%;padding:28px 26px 24px;clip-path:polygon(0 6px,14px 0,60% 4px,100% 0,calc(100% - 4px) 55%,100% calc(100% - 8px),70% 100%,8px calc(100% - 3px),3px 60%)}
+.sheet h1{font-family:var(--display);font-weight:400;font-size:58px;line-height:.95;margin:0 0 6px;text-align:center}
+.sheet .tag{text-align:center;color:var(--sheet-dim);font-size:14px;margin-bottom:18px}
+.sheet p{font-size:14.5px;line-height:1.65;margin:0 0 12px}
+.sheet .ctrl{font-size:12.5px;line-height:1.75;color:var(--sheet-dim);border-top:1px dashed currentColor;padding-top:10px;margin-top:8px}
+.sheet .stats{list-style:none;padding:0;margin:4px 0 0;font-size:14px;line-height:1.8;border-top:1px dashed var(--sheet-dim);padding-top:10px}
+.go{display:block;margin:20px auto 0;font:inherit;font-size:17px;padding:12px 28px;background:transparent;color:var(--sheet-ink);border:2px solid var(--sheet-ink);cursor:pointer}
+.go:hover{background:var(--sheet-ink);color:var(--sheet)}
+
+@media (max-width:540px){
+  #timer{font-size:26px} #center{min-width:118px}
+  .panel{padding:6px 8px} #obj{font-size:11px} .lbl{font-size:10px}
+  .bar .lbl{width:34px} #loadPanel{font-size:11px} #loadVal{font-size:14px}
+  .hb{font-size:11px;padding:4px 7px}
+  .sheet h1{font-size:44px} .sheet{padding:22px 18px 20px}
+}
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="c"></canvas>
+  <div id="grain"></div><div id="vig"></div><div id="danger"></div><div id="cross"></div><div id="area"></div>
+  <div id="touch">
+    <div id="lookZone"><div id="lookHint">Geser di sini untuk menoleh</div></div>
+    <div id="joyZone"><div id="joyHint">Geser di sini untuk berjalan</div><div id="joyBase"><div id="joyKnob"></div></div></div>
+    <button class="tb" id="bUse" type="button">Ambil</button>
+    <button class="tb" id="bRun" type="button">Lari</button>
+    <button class="tb" id="bJump" type="button">Lompat</button>
+    <button class="tb" id="bCrouch" type="button">Jongkok</button>
+    <button class="tb" id="bDrop" type="button">Buang</button>
+  </div>
+  <div id="hud">
+    <div id="topbar">
+      <div class="panel" id="objPanel"><div class="lbl">Bawa ke mobil</div><ul id="obj"></ul></div>
+      <div id="center">
+        <div id="timer">7:30</div>
+        <div class="bar"><span class="lbl">Suara</span><div class="track"><div class="fill" id="noiseFill"></div></div></div>
+        <div class="bar"><span class="lbl">Nafas</span><div class="track"><div class="fill" id="stamFill"></div></div></div>
+      </div>
+      <div class="panel" id="loadPanel">
+        <div class="lbl">Beban</div>
+        <div id="loadVal">0</div>
+        <div id="speedVal">Langkah 100%</div>
+        <div id="lootVal">Di mobil: Rp 0</div>
+        <button class="hb" id="hintBtn" type="button">Petunjuk</button>
+        <button class="hb" id="muteBtn" type="button">Bunyi: nyala</button>
+      </div>
+    </div>
+    <div id="compass"></div>
+    <div class="panel hidden" id="hints"><div class="lbl">Catatan yang kau temukan di mobil</div><ul id="hintList"></ul></div>
+    <div id="prompt"></div>
+    <div id="toast"></div>
+    <div id="keys"><span><kbd>Mouse</kbd> menoleh</span><span><kbd>WASD</kbd> jalan</span><span><kbd>Shift</kbd> lari</span><span><kbd>C</kbd> jongkok</span><span><kbd>Spasi</kbd> lompat</span><span><kbd>E</kbd> ambil / taruh</span><span><kbd>Q</kbd> buang</span><span><kbd>H</kbd> petunjuk</span><span><kbd>Esc</kbd> jeda</span></div>
+  </div>
+  <div id="overlay"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id);
+const isTouch=matchMedia('(pointer: coarse)').matches;
+if(isTouch)document.body.classList.add('touch');
+const ov=$('overlay');
+function fail(msg){ov.innerHTML=`<div class="sheet"><h1>Ups</h1><p>${msg}</p></div>`;ov.classList.remove('hidden');}
+if(!window.THREE){fail('Mesin 3D gagal dimuat. Coba muat ulang halaman ini.');return;}
+
+// ---------- helpers ----------
+const rand=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+function segDist(px,py,ax,ay,bx,by){const dx=bx-ax,dy=by-ay;const t=clamp(((px-ax)*dx+(py-ay)*dy)/(dx*dx+dy*dy),0,1);return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
+function wrapA(a){while(a>Math.PI)a-=Math.PI*2;while(a<-Math.PI)a+=Math.PI*2;return a;}
+const fmtW=w=>w%1?w.toFixed(1):String(w);
+
+// ---------- renderer ----------
+const cvs=$('c');
+let renderer;
+try{renderer=new THREE.WebGLRenderer({canvas:cvs,antialias:false,powerPreference:'high-performance'});}
+catch(e){fail('Perangkat ini tidak mendukung WebGL, jadi versi 3D tidak bisa jalan di sini.');return;}
+const PR=Math.min(window.devicePixelRatio||1,2)*(isTouch?.5:.6);
+renderer.setPixelRatio(PR);
+const SHADOWS=!isTouch;
+renderer.shadowMap.enabled=SHADOWS;
+
+const FOG=0x050706;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(FOG);
+scene.fog=new THREE.FogExp2(FOG,.062);
+const camera=new THREE.PerspectiveCamera(72,1,.05,95);
+camera.rotation.order='YXZ';scene.add(camera);
+const flash=new THREE.SpotLight(0xffe1b0,2.7,30,.52,.55,1.1);
+flash.position.set(.22,-.15,0);
+const flashT=new THREE.Object3D();flashT.position.set(.05,-.35,-6);
+camera.add(flash);camera.add(flashT);flash.target=flashT;
+if(SHADOWS){flash.castShadow=true;flash.shadow.mapSize.set(1024,1024);flash.shadow.camera.near=.3;flash.shadow.camera.far=30;flash.shadow.bias=-.0015;}
+const fill=new THREE.PointLight(0xffd9a0,.45,6,1.5);camera.add(fill);
+scene.add(new THREE.AmbientLight(0x2c3a48,.75));
+scene.add(new THREE.HemisphereLight(0x50608a,0x0b0a06,.45));
+const moon=new THREE.DirectionalLight(0x8494c4,.28);moon.position.set(-40,60,20);scene.add(moon);
+const holder=new THREE.Group();holder.position.set(.34,-.34,-.68);camera.add(holder);
+
+function resize(){
+  const w=cvs.clientWidth,h=cvs.clientHeight;
+  renderer.setSize(w,h,false);camera.aspect=w/Math.max(1,h);camera.updateProjectionMatrix();
+  const top=$('topbar').getBoundingClientRect().bottom-cvs.getBoundingClientRect().top;
+  $('compass').style.top=(top+6)+'px';
+  $('hints').style.top=(top+38)+'px';
+}
+addEventListener('resize',resize);
+
+const M=(color,o={})=>new THREE.MeshPhongMaterial(Object.assign({color,flatShading:true,shininess:4,specular:0x0c0c0c},o));
+const glintTex=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d');const r=g.createRadialGradient(32,32,0,32,32,32);r.addColorStop(0,'rgba(255,255,255,1)');r.addColorStop(.25,'rgba(255,255,255,.5)');r.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=r;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);})();
+
+// ---------- world data (meters) ----------
+const WORLD=160,TOTAL=450;
+const CAR={x:80,z:12};
+const LANDMARKS=[
+  {id:'gubuk',name:'Gubuk Reyot',x:34,z:44,kind:'hut',cr:3.6},
+  {id:'sumur',name:'Sumur Tua',x:124,z:40,kind:'well',cr:1.5},
+  {id:'beringin',name:'Pohon Beringin',x:81,z:78,kind:'banyan',cr:2.4},
+  {id:'makam',name:'Makam Keramat',x:127,z:115,kind:'graves',cr:4.2},
+  {id:'pos',name:'Pos Ronda',x:32,z:116,kind:'post',cr:2.3},
+  {id:'kali',name:'Kali Kering',x:80,z:140,kind:'creek',cr:0},
+];
+const GRAVES=[[-3.2,-1.7],[-.3,-2.6],[2.8,-1.6],[-2.3,1.8],[.6,1.5],[3.4,2.2]];
+const CREEK=[[38,130],[47,133],[60,138],[73,136],[86,141],[100,139],[114,144],[127,141],[140,146]];
+const creekD=(x,z)=>{let m=1e9;for(let i=0;i<CREEK.length-1;i++)m=Math.min(m,segDist(x,z,CREEK[i][0],CREEK[i][1],CREEK[i+1][0],CREEK[i+1][1]));return m;};
+const REQ=[
+  {id:'kunci',name:'Kunci Mobil',w:.5,hint:L=>`“Kuncinya pasti jatuh waktu aku lari lewat ${L}.”`},
+  {id:'busi',name:'Busi',w:.5,hint:L=>`“Ada kotak perkakas tertinggal di ${L}.”`},
+  {id:'aki',name:'Aki',w:3,hint:L=>`“Seseorang menyimpan aki di ${L}. Berat sekali.”`},
+  {id:'bensin',name:'Jeriken Bensin',w:3.5,hint:L=>`“Tadi sore kulihat jeriken di ${L}.”`},
+];
+const LOOT=[
+  {k:'keris',name:'Keris Pusaka',w:2,v:500},{k:'kalung',name:'Kalung Emas',w:1,v:300},{k:'kendi',name:'Kendi Antik',w:2.5,v:250},
+  {k:'radio',name:'Radio Tua',w:3,v:200},{k:'petromaks',name:'Petromaks',w:2,v:150},{k:'uang',name:'Uang Kuno',w:.5,v:100},
+  {k:'wayang',name:'Wayang Kulit',w:1,v:180},{k:'arloji',name:'Arloji Saku',w:.5,v:220},{k:'gong',name:'Gong Kecil',w:4,v:450},{k:'topeng',name:'Topeng Kayu',w:1.5,v:160},
+];
+
+// ---------- mesh builders ----------
+function part(geo,mat,x,y,z,rx,ry,rz){const m=new THREE.Mesh(geo,mat);m.position.set(x||0,y||0,z||0);m.rotation.set(rx||0,ry||0,rz||0);m.castShadow=SHADOWS;m.receiveShadow=SHADOWS;return m;}
+function itemMesh(def){
+  const g=new THREE.Group(),k=def.id||def.k;
+  const gold=M(0xb8862e,{shininess:40,specular:0x553311}),metal=M(0x8a8a86,{shininess:30}),dark=M(0x1d1f1c),wood=M(0x5a3d22);
+  switch(k){
+    case'kunci':g.add(part(new THREE.TorusGeometry(.06,.018,5,8),gold,0,.02,0,Math.PI/2),part(new THREE.BoxGeometry(.14,.02,.035),gold,.13,.02,0));break;
+    case'busi':g.add(part(new THREE.CylinderGeometry(.025,.025,.13,6),M(0xe8e2d0),0,.03,0,0,0,Math.PI/2),part(new THREE.CylinderGeometry(.04,.04,.05,6),metal,.08,.03,0,0,0,Math.PI/2));break;
+    case'aki':g.add(part(new THREE.BoxGeometry(.34,.22,.2),M(0x1f2b27),0,.11,0),part(new THREE.CylinderGeometry(.025,.025,.05,6),M(0xa02a20),-.1,.24,0),part(new THREE.CylinderGeometry(.025,.025,.05,6),dark,.1,.24,0));break;
+    case'bensin':g.add(part(new THREE.BoxGeometry(.3,.42,.17),M(0x8c2b1e),0,.21,0),part(new THREE.BoxGeometry(.18,.05,.05),M(0x6e2017),-.02,.45,0),part(new THREE.CylinderGeometry(.03,.03,.08,6),dark,.11,.45,0));break;
+    case'keris':g.add(part(new THREE.ConeGeometry(.03,.42,4),metal,.2,.03,0,0,0,-Math.PI/2),part(new THREE.BoxGeometry(.12,.04,.05),wood,-.04,.03,0));break;
+    case'kalung':g.add(part(new THREE.TorusGeometry(.1,.012,4,12),gold,0,.015,0,Math.PI/2));break;
+    case'kendi':g.add(part(new THREE.IcosahedronGeometry(.16,0),M(0x8a4b2c),0,.16,0),part(new THREE.CylinderGeometry(.04,.05,.14,6),M(0x8a4b2c),0,.34,0));break;
+    case'radio':g.add(part(new THREE.BoxGeometry(.36,.22,.14),M(0x5b4632),0,.11,0),part(new THREE.CylinderGeometry(.06,.06,.02,8),dark,-.08,.12,.075,Math.PI/2));break;
+    case'petromaks':g.add(part(new THREE.CylinderGeometry(.08,.1,.14,8),M(0x6e7a74),0,.07,0),part(new THREE.IcosahedronGeometry(.09,0),M(0xe8e0c8,{transparent:true,opacity:.6}),0,.22,0),part(new THREE.CylinderGeometry(.04,.06,.06,8),M(0x6e7a74),0,.33,0));break;
+    case'uang':for(let i=0;i<4;i++)g.add(part(new THREE.CylinderGeometry(.05,.05,.012,8),gold,i*.03,.006+i*.012,0));break;
+    case'wayang':g.add(part(new THREE.BoxGeometry(.16,.02,.42),M(0x7a4a1e),0,.012,0),part(new THREE.CylinderGeometry(.008,.008,.3,4),wood,0,.012,.3,Math.PI/2));break;
+    case'arloji':g.add(part(new THREE.CylinderGeometry(.05,.05,.02,10),gold,0,.01,0),part(new THREE.TorusGeometry(.02,.006,4,8),gold,0,.01,.065,Math.PI/2));break;
+    case'gong':g.add(part(new THREE.CylinderGeometry(.3,.3,.06,12),M(0x9a7a2a,{shininess:40}),0,.03,0),part(new THREE.IcosahedronGeometry(.07,0),M(0x9a7a2a),0,.07,0));break;
+    case'topeng':{const t=part(new THREE.IcosahedronGeometry(.13,0),M(0xc9b48a),0,.06,0);t.scale.set(1,.5,1.25);g.add(t,part(new THREE.BoxGeometry(.04,.02,.02),dark,-.05,.12,.05),part(new THREE.BoxGeometry(.04,.02,.02),dark,.05,.12,.05));break;}
+  }
+  return g;
+}
+function makeMonster(){
+  const g=new THREE.Group(),mat=M(0x0d0b0a,{shininess:12,specular:0x1c1a18});
+  const legGeo=new THREE.CylinderGeometry(.06,.09,1.7,5);legGeo.translate(0,-.85,0);
+  const legL=part(legGeo,mat,-.18,1.7,0),legR=part(legGeo,mat,.18,1.7,0);
+  const hips=part(new THREE.IcosahedronGeometry(.2,0),mat,0,1.75,0);
+  const torso=part(new THREE.CylinderGeometry(.2,.12,1.15,6),mat,0,2.3,.08,.28);
+  const chest=part(new THREE.IcosahedronGeometry(.3,0),mat,0,2.8,.24);chest.scale.set(1.15,.9,.8);
+  const armGeo=new THREE.CylinderGeometry(.04,.065,1.95,5);armGeo.translate(0,-.97,0);
+  const armL=part(armGeo,mat,-.42,2.88,.24),armR=part(armGeo,mat,.42,2.88,.24);
+  const fGeo=new THREE.ConeGeometry(.018,.32,4);fGeo.translate(0,-.16,0);
+  [armL,armR].forEach(a=>{for(let i=-1;i<=1;i++){const f=part(fGeo,mat,i*.04,-1.94,0,0,0,i*.25);a.add(f);}});
+  const neck=part(new THREE.CylinderGeometry(.05,.07,.3,5),mat,0,3.05,.38,.5);
+  const head=new THREE.Group();head.position.set(0,3.18,.5);
+  const skull=part(new THREE.IcosahedronGeometry(.22,0),mat);skull.scale.set(.9,1.25,1);head.add(sku
